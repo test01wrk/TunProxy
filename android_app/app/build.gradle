@@ -17,7 +17,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17 -fvisibility=hidden "
-                abiFilters 'armeabi-v7a','arm64-v8a', 'x86'
+                abiFilters 'armeabi-v7a','arm64-v8a', 'x86', 'x86_64'
                 arguments "-DCMAKE_VERBOSE_MAKEFILE=1 -DANDROID_FUNCTION_LEVEL_LINKING=ON"
             }
         }
@@ -41,16 +41,17 @@ android {
             signingConfig signingConfigs.release
         }
     }
-    lintOptions {
-        abortOnError false
-    }
     externalNativeBuild {
         cmake {
             path file('CMakeLists.txt')
         }
     }
 
-    ndkVersion = '22.1.7171670'
+    ndkVersion = '23.1.7779620'
+    lint {
+        abortOnError false
+    }
+    namespace 'tun.proxy'
 
     applicationVariants.all { variant ->
         if (variant.buildType.name.equals("release")) {
