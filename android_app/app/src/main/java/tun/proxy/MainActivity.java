@@ -29,16 +29,19 @@ import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
 
-import net.lightbody.bmp.BrowserMobProxy;
-import net.lightbody.bmp.BrowserMobProxyServer;
 import net.lightbody.bmp.mitm.CertificateAndKeySource;
 import net.lightbody.bmp.mitm.KeyStoreFileCertificateSource;
 import net.lightbody.bmp.mitm.RootCertificateGenerator;
 import net.lightbody.bmp.mitm.manager.ImpersonatingMitmManager;
 
+import org.littleshoot.proxy.HttpProxyServer;
 import org.littleshoot.proxy.MitmManager;
+import org.littleshoot.proxy.impl.DefaultHttpProxyServer;
 
 import java.io.File;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
 
 import tun.proxy.service.Tun2HttpVpnService;
 import tun.utils.IPUtil;
@@ -55,7 +58,7 @@ public class MainActivity extends AppCompatActivity implements
     Handler statusHandler = new Handler(Looper.getMainLooper());
 
     private Tun2HttpVpnService service;
-    private BrowserMobProxy proxy;
+    private HttpProxyServer proxy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -220,14 +223,18 @@ public class MainActivity extends AppCompatActivity implements
     }
 
     private void startProxy() {
-        proxy = new BrowserMobProxyServer();
-        proxy.setMitmManager(createMitmManager());
-        proxy.setTrustAllServers(true);
-        proxy.start(0);
-        String proxyHost = "127.0.0.1";
-        int proxyPort = proxy.getPort();
-        Log.i(TAG, "start proxy at " + proxyHost + ":" + proxyPort);
-        hostEditText.post(() -> hostEditText.setText(proxyHost + ":" + proxyPort));
+        try {
+            proxy = DefaultHttpProxyServer.bootstrap()
+                    .withAddress(new InetSocketAddress(InetAddress.getByName("0.0.0.0"), 8888))
+                    .withManInTheMiddle(createMitmManager())
+                    .start();
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+            return;
+        }
+        Log.i(TAG, "start proxy");
+        hostEditText.post(() -> hostEditText.setText("127.0.0.1:8888"));
+
 //        proxy.addRequestFilter((request, contents, messageInfo) -> {
 //            Log.i(TAG, "addRequestFilter. request: " + request + ", content: " + contents + ", message: " + messageInfo);
 //            return null;
@@ -241,6 +248,7 @@ public class MainActivity extends AppCompatActivity implements
     private void stopProxy() {
         if (proxy != null) {
             proxy.stop();
+            proxy = null;
             hostEditText.post(() -> hostEditText.setText(""));
         }
     }
@@ -265,6 +273,7 @@ public class MainActivity extends AppCompatActivity implements
         // tell the ImpersonatingMitmManager  use the RootCertificateGenerator we just configured
         return ImpersonatingMitmManager.builder()
                 .rootCertificateSource(rootCertificateGenerator)
+                .trustAllServers(true)
                 .build();
     }
 

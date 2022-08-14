@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">TunProxy</string>
+    <string name="app_name">TunProxy-Local</string>
 
     <!-- Main Activity -->
     <string name="notify_title">Proxy is running</string>
