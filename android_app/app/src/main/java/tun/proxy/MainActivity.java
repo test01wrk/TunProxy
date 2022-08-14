@@ -6,7 +6,6 @@ import android.os.Bundle;
 import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
@@ -19,7 +18,6 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
 
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -31,12 +29,23 @@ import android.view.MenuItem;
 import android.widget.Button;
 import android.widget.EditText;
 
+import net.lightbody.bmp.BrowserMobProxy;
+import net.lightbody.bmp.BrowserMobProxyServer;
+import net.lightbody.bmp.mitm.CertificateAndKeySource;
+import net.lightbody.bmp.mitm.KeyStoreFileCertificateSource;
+import net.lightbody.bmp.mitm.RootCertificateGenerator;
+import net.lightbody.bmp.mitm.manager.ImpersonatingMitmManager;
+
+import org.littleshoot.proxy.MitmManager;
+
+import java.io.File;
+
 import tun.proxy.service.Tun2HttpVpnService;
-import tun.utils.CertificateUtil;
 import tun.utils.IPUtil;
 
 public class MainActivity extends AppCompatActivity implements
         PreferenceFragmentCompat.OnPreferenceStartFragmentCallback {
+    private static final String TAG = "VPN_PROXY";
     public static final int REQUEST_VPN = 1;
     public static final int REQUEST_CERT = 2;
 
@@ -46,6 +55,7 @@ public class MainActivity extends AppCompatActivity implements
     Handler statusHandler = new Handler(Looper.getMainLooper());
 
     private Tun2HttpVpnService service;
+    private BrowserMobProxy proxy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,13 +71,25 @@ public class MainActivity extends AppCompatActivity implements
         start.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                startVpn();
+                new Thread() {
+                    @Override
+                    public void run() {
+                        startProxy();
+                        v.post(() -> startVpn());
+                    }
+                }.start();
             }
         });
         stop.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 stopVpn();
+                new Thread() {
+                    @Override
+                    public void run() {
+                        stopProxy();
+                    }
+                }.start();
             }
         });
         start.setEnabled(true);
@@ -195,6 +217,55 @@ public class MainActivity extends AppCompatActivity implements
             hostEditText.setEnabled(true);
             stop.setEnabled(false);
         }
+    }
+
+    private void startProxy() {
+        proxy = new BrowserMobProxyServer();
+        proxy.setMitmManager(createMitmManager());
+        proxy.setTrustAllServers(true);
+        proxy.start(0);
+        String proxyHost = "127.0.0.1";
+        int proxyPort = proxy.getPort();
+        Log.i(TAG, "start proxy at " + proxyHost + ":" + proxyPort);
+        hostEditText.post(() -> hostEditText.setText(proxyHost + ":" + proxyPort));
+//        proxy.addRequestFilter((request, contents, messageInfo) -> {
+//            Log.i(TAG, "addRequestFilter. request: " + request + ", content: " + contents + ", message: " + messageInfo);
+//            return null;
+//        });
+//        proxy.addResponseFilter((response, contents, messageInfo) -> {
+//            Log.i(TAG, "addRequestFilter. response: " + response + ", content: " + contents + ", message: " + messageInfo);
+//        });
+
+    }
+
+    private void stopProxy() {
+        if (proxy != null) {
+            proxy.stop();
+            hostEditText.post(() -> hostEditText.setText(""));
+        }
+    }
+
+    private MitmManager createMitmManager() {
+        File caDir = getExternalFilesDir("CA");
+        File keyStore = new File(caDir, "keystore.p12");
+
+        if (!keyStore.exists()) {
+            // create a CA Root Certificate using default settings
+            RootCertificateGenerator rootCertificateGenerator = RootCertificateGenerator.builder().build();
+            // save the newly-generated Root Certificate and Private Key -- the .cer file can be imported
+            // directly into a browser
+            rootCertificateGenerator.saveRootCertificateAsPemFile(new File(caDir, "certificate.cer"));
+//            rootCertificateGenerator.savePrivateKeyAsPemFile(new File(caDir, "private-key.pem"), "password");
+            // or save the certificate and private key as a PKCS12 keystore, for later use
+            rootCertificateGenerator.saveRootCertificateAndKey("PKCS12", keyStore,
+                    "privateKeyAlias", "password");
+        }
+        CertificateAndKeySource rootCertificateGenerator =
+                new KeyStoreFileCertificateSource("PKCS12", keyStore, "privateKeyAlias", "password");
+        // tell the ImpersonatingMitmManager  use the RootCertificateGenerator we just configured
+        return ImpersonatingMitmManager.builder()
+                .rootCertificateSource(rootCertificateGenerator)
+                .build();
     }
 
     private void stopVpn() {
