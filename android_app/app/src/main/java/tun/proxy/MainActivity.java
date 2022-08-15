@@ -1,8 +1,5 @@
 package tun.proxy;
 
-import android.net.VpnService;
-import android.os.Bundle;
-
 import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
@@ -10,6 +7,18 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.VpnService;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.text.TextUtils;
+import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
@@ -17,17 +26,6 @@ import androidx.fragment.app.Fragment;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.PreferenceManager;
-
-import android.os.Handler;
-import android.os.IBinder;
-import android.os.Looper;
-import android.text.TextUtils;
-import android.util.Log;
-import android.view.View;
-import android.view.Menu;
-import android.view.MenuItem;
-import android.widget.Button;
-import android.widget.EditText;
 
 import net.lightbody.bmp.mitm.CertificateAndKeySource;
 import net.lightbody.bmp.mitm.KeyStoreFileCertificateSource;
@@ -37,6 +35,9 @@ import net.lightbody.bmp.mitm.manager.ImpersonatingMitmManager;
 import org.littleshoot.proxy.HttpProxyServer;
 import org.littleshoot.proxy.MitmManager;
 import org.littleshoot.proxy.impl.DefaultHttpProxyServer;
+import org.littleshoot.proxy.mitm.Authority;
+import org.littleshoot.proxy.mitm.CertificateSniffingMitmManager;
+import org.littleshoot.proxy.mitm.RootCertificateException;
 
 import java.io.File;
 import java.net.InetAddress;
@@ -257,24 +258,30 @@ public class MainActivity extends AppCompatActivity implements
         File caDir = getExternalFilesDir("CA");
         File keyStore = new File(caDir, "keystore.p12");
 
-        if (!keyStore.exists()) {
-            // create a CA Root Certificate using default settings
-            RootCertificateGenerator rootCertificateGenerator = RootCertificateGenerator.builder().build();
-            // save the newly-generated Root Certificate and Private Key -- the .cer file can be imported
-            // directly into a browser
-            rootCertificateGenerator.saveRootCertificateAsPemFile(new File(caDir, "certificate.cer"));
-//            rootCertificateGenerator.savePrivateKeyAsPemFile(new File(caDir, "private-key.pem"), "password");
-            // or save the certificate and private key as a PKCS12 keystore, for later use
-            rootCertificateGenerator.saveRootCertificateAndKey("PKCS12", keyStore,
-                    "privateKeyAlias", "password");
-        }
-        CertificateAndKeySource rootCertificateGenerator =
-                new KeyStoreFileCertificateSource("PKCS12", keyStore, "privateKeyAlias", "password");
         // tell the ImpersonatingMitmManager  use the RootCertificateGenerator we just configured
-        return ImpersonatingMitmManager.builder()
-                .rootCertificateSource(rootCertificateGenerator)
-                .trustAllServers(true)
-                .build();
+        try {
+            Authority authority = new Authority(caDir, "keystore", "password".toCharArray(),
+                    "Local Proxy MITM CA", "CA", "CA", "CA", "CA");
+            return new CertificateSniffingMitmManager(authority);
+        } catch (RootCertificateException e) {
+            if (!keyStore.exists()) {
+                // create a CA Root Certificate using default settings
+                RootCertificateGenerator rootCertificateGenerator = RootCertificateGenerator.builder().build();
+                // save the newly-generated Root Certificate and Private Key -- the .cer file can be imported
+                // directly into a browser
+                rootCertificateGenerator.saveRootCertificateAsPemFile(new File(caDir, "certificate.cer"));
+//            rootCertificateGenerator.savePrivateKeyAsPemFile(new File(caDir, "private-key.pem"), "password");
+                // or save the certificate and private key as a PKCS12 keystore, for later use
+                rootCertificateGenerator.saveRootCertificateAndKey("PKCS12", keyStore,
+                        "privateKeyAlias", "password");
+            }
+            CertificateAndKeySource rootCertificateGenerator =
+                    new KeyStoreFileCertificateSource("PKCS12", keyStore, "privateKeyAlias", "password");
+            return ImpersonatingMitmManager.builder()
+                    .rootCertificateSource(rootCertificateGenerator)
+                    .trustAllServers(true)
+                    .build();
+        }
     }
 
     private void stopVpn() {
