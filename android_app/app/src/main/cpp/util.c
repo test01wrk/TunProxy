@@ -43,9 +43,12 @@ int sdk_int(JNIEnv *env) {
     return (*env)->GetStaticIntField(env, clsVersion, fid);
 }
 
-void log_android(int prio, const char *fmt, ...) {
-
-}
+//void log_android(int prio, const char *fmt, ...) {
+//    va_list args;
+//    va_start(args, fmt)
+//    __android_log_print(prio, "XXX", fmt, args);
+//    va_end(args)
+//}
 
 uint8_t char2nible(const char c) {
     if (c >= '0' && c <= '9') return (uint8_t) (c - '0');

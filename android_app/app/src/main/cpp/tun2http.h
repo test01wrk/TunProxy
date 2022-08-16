@@ -59,6 +59,8 @@
 
 #define MTU 10000
 
+#define log_android(prio, fmt, ...) ( __android_log_print(prio, "Tun2Http", fmt, ##__VA_ARGS__) )
+
 struct arguments {
     JNIEnv *env;
     jobject instance;
@@ -447,7 +449,7 @@ int jniCheckException(JNIEnv *env);
 
 int sdk_int(JNIEnv *env);
 
-void log_android(int prio, const char *fmt, ...);
+//void log_android(int prio, const char *fmt, ...);
 
 void log_packet(const struct arguments *args, jobject jpacket);
 
