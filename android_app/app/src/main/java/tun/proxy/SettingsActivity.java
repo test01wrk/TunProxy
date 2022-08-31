@@ -7,21 +7,26 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-//import android.os.AsyncTask;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.widget.SearchView;
+
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.FragmentManager;
-import androidx.preference.*;
+import androidx.preference.CheckBoxPreference;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
+import androidx.preference.PreferenceFragmentCompat;
+import androidx.preference.PreferenceManager;
+import androidx.preference.PreferenceScreen;
 
-import android.util.Log;
-import android.view.Menu;
-import android.view.MenuInflater;
-import android.view.MenuItem;
-import android.widget.*;
-
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -385,12 +390,13 @@ public class SettingsActivity extends AppCompatActivity {
 //            }
 //        }
 
-        private Preference buildPackagePreferences(final PackageManager pm, final PackageInfo pi) {
+        private Preference buildPackagePreferences(final PackageInfoCache pc) {
             final CheckBoxPreference prefCheck = new CheckBoxPreference(getActivity());
-            prefCheck.setIcon(pi.applicationInfo.loadIcon(pm));
-            prefCheck.setTitle(pi.applicationInfo.loadLabel(pm).toString());
-            prefCheck.setSummary(pi.packageName);
-            boolean checked = this.mAllPackageInfoMap.containsKey(pi.packageName) ? this.mAllPackageInfoMap.get(pi.packageName) : false;
+            prefCheck.setIcon(pc.getIcon());
+            prefCheck.setTitle(pc.getLabel().toString());
+            prefCheck.setSummary(pc.getPackageName());
+            boolean checked = this.mAllPackageInfoMap.containsKey(pc.getPackageName())
+                    ? this.mAllPackageInfoMap.get(pc.getPackageName()) : false;
             prefCheck.setChecked(checked);
             Preference.OnPreferenceClickListener click = new Preference.OnPreferenceClickListener() {
                 @Override
@@ -517,12 +523,42 @@ public class SettingsActivity extends AppCompatActivity {
         }
     }
 
+    public static class PackageInfoCache {
+        private final PackageManager packageManager;
+        public final PackageInfo packageInfo;
+        private CharSequence label;
+        private Drawable icon;
+
+        public PackageInfoCache(PackageManager packageManager, PackageInfo packageInfo) {
+            this.packageManager = packageManager;
+            this.packageInfo = packageInfo;
+        }
+
+        public CharSequence getLabel() {
+            if (label == null) {
+                label = packageInfo.applicationInfo.loadLabel(packageManager);
+            }
+            return label;
+        }
+
+        public Drawable getIcon() {
+            if (icon == null) {
+                icon = packageInfo.applicationInfo.loadIcon(packageManager);
+            }
+            return icon;
+        }
+
+        public String getPackageName() {
+            return packageInfo.packageName;
+        }
+    }
+
     /*
     * AsyncTask
     * https://developer.android.com/reference/android/os/AsyncTask
     * Deprecated in API level R
     * */
-    public static class AsyncTaskProgress extends ProgressTask<String, String, List<PackageInfo>> {
+    public static class AsyncTaskProgress extends ProgressTask<String, String, List<PackageInfoCache>> {
 
         final PackageListFragment packageFragment;
 
@@ -536,27 +572,31 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         @Override
-        protected List<PackageInfo> doInBackground(String... params) {
-            return filterPackages(packageFragment.searchFilter, packageFragment.appFilterBy, packageFragment.appOrderBy, packageFragment.appSortBy);
+        protected List<PackageInfoCache> doInBackground(String... params) {
+            return filterPackages(packageFragment.searchFilter, packageFragment.appFilterBy,
+                    packageFragment.appOrderBy, packageFragment.appSortBy);
         }
 
-        private List<PackageInfo> filterPackages(String filter, final MyApplication.AppSortBy filterBy, final MyApplication.AppOrderBy orderBy, final MyApplication.AppSortBy sortBy) {
+        private List<PackageInfoCache> filterPackages(String filter, final MyApplication.AppSortBy filterBy, final MyApplication.AppOrderBy orderBy, final MyApplication.AppSortBy sortBy) {
             final Context context = MyApplication.getInstance().getApplicationContext();
             final PackageManager pm = context.getPackageManager();
-            final List<PackageInfo> installedPackages = pm.getInstalledPackages(PackageManager.GET_META_DATA);
-            Collections.sort(installedPackages, new Comparator<PackageInfo>() {
+            final List<PackageInfoCache> packageInfoCaches = new ArrayList<>();
+            for (PackageInfo packageInfo : pm.getInstalledPackages(PackageManager.GET_META_DATA)) {
+                packageInfoCaches.add(new PackageInfoCache(pm, packageInfo));
+            }
+            Collections.sort(packageInfoCaches, new Comparator<PackageInfoCache>() {
                 @Override
-                public int compare(PackageInfo o1, PackageInfo o2) {
+                public int compare(PackageInfoCache o1, PackageInfoCache o2) {
                     String t1 = "";
                     String t2 = "";
                     switch (sortBy) {
                         case APPNAME:
-                            t1 = o1.applicationInfo.loadLabel(pm).toString();
-                            t2 = o2.applicationInfo.loadLabel(pm).toString();
+                            t1 = o1.getLabel().toString();
+                            t2 = o2.getLabel().toString();
                             break;
                         case PKGNAME:
-                            t1 = o1.packageName;
-                            t2 = o2.packageName;
+                            t1 = o1.getPackageName();
+                            t2 = o2.getPackageName();
                             break;
                     }
 //                    try {
@@ -571,42 +611,43 @@ public class SettingsActivity extends AppCompatActivity {
                 }
             });
             final Map<String, Boolean> installedPackageMap = new HashMap<>();
-            for (final PackageInfo pi : installedPackages) {
+            for (final PackageInfoCache pc : packageInfoCaches) {
                 if (isCancelled()) continue;
                 // exclude self package
-                if (pi.packageName.equals(MyApplication.getInstance().getPackageName())) {
+                if (pc.getPackageName().equals(MyApplication.getInstance().getPackageName())) {
                     continue;
                 }
-                boolean checked = packageFragment.mAllPackageInfoMap.containsKey(pi.packageName) ? packageFragment.mAllPackageInfoMap.get(pi.packageName) : false;
-                installedPackageMap.put(pi.packageName, checked);
+                boolean checked = packageFragment.mAllPackageInfoMap.containsKey(pc.getPackageName())
+                        ? packageFragment.mAllPackageInfoMap.get(pc.getPackageName()) : false;
+                installedPackageMap.put(pc.getPackageName(), checked);
             }
             packageFragment.mAllPackageInfoMap.clear();
             packageFragment.mAllPackageInfoMap.putAll(installedPackageMap);
-            return installedPackages;
+            return packageInfoCaches;
         }
 
         @Override
-        protected void onPostExecute(List<PackageInfo> installedPackages) {
+        protected void onPostExecute(List<PackageInfoCache> packageInfoCaches) {
             final Context context = MyApplication.getInstance().getApplicationContext();
             final PackageManager pm = context.getPackageManager();
             packageFragment.mFilterPreferenceScreen.removeAll();
-            for (final PackageInfo pi : installedPackages) {
+            for (final PackageInfoCache pc : packageInfoCaches) {
                 // exclude self package
-                if (pi.packageName.equals(MyApplication.getInstance().getPackageName())) {
+                if (pc.getPackageName().equals(MyApplication.getInstance().getPackageName())) {
                     continue;
                 }
                 String t1 = "";
                 String t2 = packageFragment.searchFilter.trim();
                 switch (packageFragment.appFilterBy) {
                     case APPNAME:
-                        t1 = pi.applicationInfo.loadLabel(pm).toString();
+                        t1 = pc.getLabel().toString();
                         break;
                     case PKGNAME:
-                        t1 = pi.packageName;
+                        t1 = pc.getPackageName();
                         break;
                 }
                 if (t2.isEmpty() || t1.toLowerCase().contains(t2.toLowerCase())) {
-                    final Preference preference = packageFragment.buildPackagePreferences(pm, pi);
+                    final Preference preference = packageFragment.buildPackagePreferences(pc);
                     packageFragment.mFilterPreferenceScreen.addPreference(preference);
                 }
             }
