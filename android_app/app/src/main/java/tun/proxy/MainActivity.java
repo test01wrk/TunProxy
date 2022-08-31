@@ -152,16 +152,7 @@ public class MainActivity extends AppCompatActivity implements
         stop.setEnabled(false);
         updateStatus();
 
-        statusHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                if (service != null) {
-                    updateStatus();
-                } else {
-                    statusHandler.postDelayed(this, 500);
-                }
-            }
-        });
+        statusHandler.post(statusGuardRunnable);
 
         Intent intent = new Intent(this, Tun2HttpVpnService.class);
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
@@ -175,7 +166,16 @@ public class MainActivity extends AppCompatActivity implements
     protected void onPause() {
         super.onPause();
         unbindService(serviceConnection);
+        statusHandler.removeCallbacks(statusGuardRunnable);
     }
+
+    private final Runnable statusGuardRunnable = new Runnable() {
+        @Override
+        public void run() {
+            updateStatus();
+            statusHandler.postDelayed(this, 500);
+        }
+    };
 
     void updateStatus() {
         if (service == null) {
