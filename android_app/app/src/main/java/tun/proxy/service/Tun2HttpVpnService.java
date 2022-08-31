@@ -5,9 +5,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.VpnService;
+import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.Parcel;
 import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
@@ -18,6 +21,7 @@ import android.util.Log;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -42,6 +46,7 @@ public class Tun2HttpVpnService extends VpnService {
 
     private Tun2HttpVpnService.Builder lastBuilder = null;
     private ParcelFileDescriptor vpn = null;
+    private Handler mainHandler = new Handler(Looper.getMainLooper());
 
     synchronized private static PowerManager.WakeLock getLock(Context context) {
         if (wlInstance == null) {
@@ -176,13 +181,21 @@ public class Tun2HttpVpnService extends VpnService {
     }
 
     private void startNative(ParcelFileDescriptor vpn) {
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String proxyHost = prefs.getString(PREF_PROXY_HOST, "");
-        int proxyPort = prefs.getInt(PREF_PROXY_PORT, 0);
+        final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        final String proxyHost = prefs.getString(PREF_PROXY_HOST, "");
+        final int proxyPort = prefs.getInt(PREF_PROXY_PORT, 0);
         if (proxyPort != 0 && !TextUtils.isEmpty(proxyHost)) {
-            jni_start(vpn.getFd(), false, 3, proxyHost, proxyPort);
-
-            prefs.edit().putBoolean(PREF_RUNNING, true).apply();
+            AsyncTask.THREAD_POOL_EXECUTOR.execute(() -> {
+                try {
+                    final String resolvedHost = InetAddress.getByName(proxyHost).getHostAddress();
+                    mainHandler.post(() -> {
+                        jni_start(vpn.getFd(), false, 3, resolvedHost, proxyPort);
+                        prefs.edit().putBoolean(PREF_RUNNING, true).apply();
+                    });
+                } catch (UnknownHostException e) {
+                    Log.e(TAG, "failed to resolve host: " + proxyHost, e);
+                }
+            });
         }
     }
 
