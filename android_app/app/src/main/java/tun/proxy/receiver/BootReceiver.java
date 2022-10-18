@@ -15,7 +15,7 @@ public class BootReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(final Context context, Intent intent) {
-        if (intent != null && !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+        if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
             return;
         }
 
